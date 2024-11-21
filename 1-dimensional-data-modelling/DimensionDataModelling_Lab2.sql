@@ -1,4 +1,4 @@
---insert into players 
+-- insert into players 
 with years as (
 	select *
 	from generate_series(1996, 2022) as season
@@ -51,6 +51,7 @@ select
 	s.country,
 	s.draft_year,
 	s.draft_number,
+	s.draft_round,
 	seasons as season_stats
 --	,( seasons[cardinality(seasons)]).pts
 	,case 
