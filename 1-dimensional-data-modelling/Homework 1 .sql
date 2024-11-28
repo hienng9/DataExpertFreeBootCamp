@@ -1,4 +1,4 @@
--- CREATE TYPE FILMS
+--1. table actors
 create type films as( 
 	film text,
 	votes integer,
@@ -8,7 +8,6 @@ create type films as(
 
 -- CREATE TYPE QUALITY_CLASS
 create type quality_class as enum('star', 'good', 'average', 'bad');
-drop table actors;
 
 --CREATE TABLE actors
 create table actors ( 
@@ -22,7 +21,7 @@ create table actors (
 );
 
 -- INSERT INTO TABLE actors
--- CUUMULATIVE TABLE GENERATION QUERY
+-- 2. TABLE GENERATION QUERY
 insert into actors
 with years as (
 	select generate_series(1970, 2023) as year
@@ -88,7 +87,7 @@ distinct
 	, current_year
 from actor_agg_films;
 
--- actors_history_scd
+-- 3. actors_history_scd
 
 create table actors_history_scd (
 	actorid TEXT,
@@ -111,6 +110,7 @@ with actors_lag as(
 		lag(quality_class, 1) over (partition by actorid order by current_year) as previous_quality_class,
 		lag(is_active, 1) over (partition by actorid order by current_year) as previous_is_active
 	from actors
+	where current_year < 2021
 ),
 change_indicators as (
 	select *,
@@ -162,6 +162,70 @@ select y.years, y.actorid, a.actor, a.quality_class, a.is_active--, a.start_date
 from actors_years y
 left join actors_history_scd  a
 on a.actorid = y.actorid and y.years between a.start_date and a.end_date;
+
+-- 5. Incremental query for actors_history_scd
+
+with historical_data as (
+	select * 
+	from actors_history_scd
+	where end_date < 2020
+	),
+potential_change_data as (
+	select * 
+	from actors_history_scd ahs 
+	where end_date = 2020
+),
+current_year_data as (
+	select * 
+	from actors a 
+	where current_year = 2021
+),
+new_actors as (
+	select a.actorid, a.actor, a.quality_class, a.is_active, a.current_year as start_date, a.current_year as end_date
+	from current_year_data a 
+	left join actors_history_scd a1
+	on a.actorid = a1.actorid
+	where a1.actorid is null
+),
+unchanged_data as (
+	select 
+	a.actorid,
+	a.actor,
+	c.quality_class,
+	c.is_active,
+	a.start_date,
+	c.current_year as end_date
+	from potential_change_data a
+	join current_year_data c
+	on c.actorid = a.actorid
+	where a.quality_class = c.quality_class and a.is_active = c.is_active
+),
+changed_data as (
+	select 
+	a.actorid,
+	a.actor,
+	c.quality_class,
+	c.is_active,
+	c.current_year as start_date,
+	c.current_year as end_date
+	from potential_change_data a
+	join current_year_data c
+	on c.actorid = a.actorid
+	where a.quality_class <> c.quality_class or a.is_active <> c.is_active
+)
+select * from changed_data
+union all
+select * from unchanged_data
+union all
+select * from new_actors
+union all
+select * from historical_data
+order by actorid, start_date
+
+
+
+
+
 
 
 
